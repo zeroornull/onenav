@@ -1,10 +1,6 @@
 name: 构建容器镜像
 
 on:
-  push:
-    branches:
-      - refactor/svelte
-      - main
   workflow_dispatch:
 
 permissions:
