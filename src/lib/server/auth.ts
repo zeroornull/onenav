@@ -35,7 +35,7 @@ type ConfigLike = {
 
 /**
  * 两种调用都认：
- * - isLogin(cookie, userAgent)，配置从 data/config.php 或 config.json 读取
+ * - isLogin(cookie, userAgent)，配置从 data/config.json 读取
  * - isLogin(cookie, userAgent, config)
  * - isLogin(cookie, USER, ENCRYPTED_PASSWORD, userAgent)，给已经取出配置的调用方
  */

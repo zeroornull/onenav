@@ -2,43 +2,36 @@
 
 - 全程使用中文输出，包括分析、进度说明、变更说明、提交信息建议；不要默认切回英文。
 
-## 入口与分发
+## 入口
 
-- 真实入口是根目录 `index.php`，不要从 README 猜流程。
-- `index.php` 启动顺序固定：先检查 `data/config.php`，不存在就进入 `controller/init.php`；再检查 `data/onenav.db3`，不存在时从 `db/onenav.simple.db3` 复制；然后 `require ./data/config.php`；最后按 `?c=` 分发到 `controller/*.php`。
-- 未传 `c` 时进入 `controller/index.php`；`?c=api`、`?c=admin`、`?c=login`、`?c=mobile` 等都直接映射到 `controller/<name>.php`。
-- `index.php` 会拒绝包含 `./` 的控制器参数；改路由时不要破坏这层基于文件名的动态分发。
-- `.htaccess` 只做两条重要伪静态：`/click/<id>` -> `index.php?c=click&id=<id>`，`/api/<method>` -> `index.php?c=api&method=<method>`。
+- 真实入口是 SvelteKit。生产镜像用 Dockerfile 里的 `node build`，开发是 `npm run dev`。
+- 不要从 README 或已经删除的 `index.php` 猜流程。仓库里没有 PHP 入口。
+- 旧地址 `/index.php?c=` 由 `src/hooks.server.ts` 调用 `src/lib/legacy-redirect.ts`，301 到现有路由。控制器名带 `./` 或 `..` 时不跳转。
+- 缺 `data/onenav.db3` 时才从 `db/onenav.simple.db3` 复制，已有库文件不要覆盖。
+
+## 账号
+
+- 运行时只读 `data/config.json`。字段是 `username`、`encrypted_password`、`email`。
+- 读配置时，若 json 不存在而 `data/config.php` 存在，用正则取出 `USER`、`ENCRYPTED_PASSWORD`、`EMAIL` 写进 json。密码摘要原样保留，不要改成 bcrypt，也不要改 cookie 算法。
+- 写入后三个字段一致才删除 `data/config.php`。核对失败不删 php，也不覆盖已有 json。
+- 两个文件都不存在时不要编造账号。
+- `data/config.php` 和 `data/config.json` 都在 `.gitignore` 里。不要提交，不要覆盖 `data/onenav.db3`。
+- 只解析，不执行 PHP。
 
 ## 关键目录
 
-- `controller/` 放页面/入口控制器，真正的 API 业务主要在 `class/Api.php`，不要只改 `controller/api.php` 的参数转发层。
-- `functions/helper.php` 放登录态、主题枚举、移动端跳转等共享函数；前台首页和后台都依赖它。
-- 后台管理的大部分前端交互、表格渲染和 API 调用集中在 `templates/admin/static/embed.js`；改后台管理行为时要同时检查这个文件。
-- 内置主题在 `templates/`，用户自定义主题走 `data/templates/`；代码里默认先找内置目录，再回退到 `data/templates/`。
-- `db/onenav.simple.db3` 是初始化种子库，`data/onenav.db3` 是运行中的真实数据。
+- 页面在 `src/routes/`，API 业务在 `src/lib/server/api/methods/`。
+- 登录态、主题枚举、移动端判断在 `src/lib/server/`。后台页面在 `src/routes/admin/`，交互在 `src/lib/components/admin/`。
+- 内置首页就是现在的 Svelte 页面，不读取 `templates/`。用户下载的主题只写数据卷 `data/templates`。
+- `db/onenav.simple.db3` 是初始化种子库。`db/sql/*.sql` 留给 `exe_sql` 按文件名执行，是数据库迁移脚本，不是 PHP，要留在仓库里。
 
-## 运行与状态文件
+## 认证
 
-- `data/config.php` 和 `data/onenav.db3` 是本地实例状态文件，且被 `.gitignore` 忽略；除非用户明确要求，不要覆盖、删除、重建这两个文件。
-- 安装流程依赖 `config.simple.php` 模板生成 `data/config.php`；涉及初始化逻辑时，同时检查 `controller/init.php` 和 `config.simple.php`。
-- `controller/init.php` 的可执行约束比 README 更可信：初始化会检查 `pdo_sqlite`、`openssl`、`zlib`、`curl`，并拒绝二级目录安装。
+- 登录态不是 session，而是 `key` cookie。值是 `md5(USER + ENCRYPTED_PASSWORD + onenav + User-Agent)`。
+- API 鉴权：`token=md5(USER + SecretKey)` 或请求头 `X-Token`。没传 token 时退回 cookie。
+- 后台用同一套 cookie 判断。
 
-## 前台与主题流程
+## 验证
 
-- `controller/index.php` 会先查 `on_options.s_site` 和分类/链接，再决定主题；不要只看模板目录名判断首页行为。
-- 未配置主题时默认 `default2`；已配置时按 UA 在 `s_themes` 中区分 `pc_theme` 和 `mobile_theme`。
-- `?theme=` 只允许切到 `get_all_themes()` 返回的主题；这个函数会排除 `admin`、`mobile`、`universal`。
-- 主题配置文件兼容两套命名：优先 `config.json`，其次 `info.json`；内置主题和 `data/templates/` 都要一起兼容。
-
-## 认证与 API 约束
-
-- 登录态不是 PHP session，而是 `key` cookie；`functions/helper.php::is_login()` 会把它和 `USER + ENCRYPTED_PASSWORD + onenav + User-Agent` 的 MD5 比较。
-- `class/Api.php::auth()` 允许两种 API 鉴权：`token=md5(USER + SecretKey)` 或请求头 `X-Token`；没传 token 时会退回 cookie 登录态。
-- 后台和移动后台都依赖同一套 cookie 登录判断；改鉴权时要一起看 `controller/admin.php`、`controller/mobile.php`、`controller/login.php`。
-
-## 验证方式
-
-- 仓库里没有可验证的 `composer.json`、`package.json`、CI workflow、lint/test 配置；不要臆造 `composer test`、`npm run build` 之类命令。
-- 对 PHP 改动，最小可执行验证是对改过的文件运行 `php -l <file>`。
-- 对路由或接口改动，优先按真实入口验证：`/index.php?c=...` 或重写后的 `/api/...`、`/click/...`。
+- `npm run check` 必须是 0 error。
+- 路由和接口用 `npx tsx scripts/verify-*.ts`。这些脚本用临时库，不要对现网 `data/onenav.db3` 执行 SQL、升级或导入。

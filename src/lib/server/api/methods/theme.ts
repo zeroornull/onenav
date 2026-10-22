@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ApiContext, ApiResult } from '#lib/server/api/context';
 import { extractArchive } from '#lib/server/api/archive';
@@ -9,24 +9,16 @@ import { dataRoot, deny, ret, text } from '#lib/server/api/util';
 export const methods = ['down_theme', 'get_themes', 'set_theme'];
 
 const THEME_NAME = /^[a-zA-Z0-9][a-zA-Z0-9-_]+[a-zA-Z0-9]$/;
+/** 库里没写主题时沿用原来的字段值。页面本身是 Svelte 首页，不读取这个名字对应的模板目录。 */
 const DEFAULT_THEMES = { pc_theme: 'default2', mobile_theme: 'default2' };
 
 function themeNameOk(name: string): boolean {
 	return THEME_NAME.test(name);
 }
 
-function alpineHost(): boolean {
-	try {
-		return /alpine/i.test(readFileSync('/etc/os-release', 'utf8'));
-	} catch {
-		return false;
-	}
-}
-
-/** 容器里除 default2 外放到 data/templates，其余情况放到 templates。 */
-function themeDirFor(name: string): string {
-	if (alpineHost() && name !== 'default2') return path.join(dataRoot(), 'templates');
-	return path.join(process.cwd(), 'templates');
+/** 下载的主题只放数据卷 data/templates。内置首页是 Svelte，不写 templates/。 */
+function themeRoot(): string {
+	return path.join(dataRoot(), 'templates');
 }
 
 function storedThemes(raw: string | null): unknown {
@@ -62,13 +54,11 @@ async function downTheme(ctx: ApiContext): Promise<ApiResult> {
 	const key = text(ctx.params.key).trim();
 	const value = text(ctx.params.value).trim();
 	const type = text(ctx.params.type).trim();
-	const builtin = path.join(process.cwd(), 'templates', name);
-	const custom = path.join(dataRoot(), 'templates', name);
-	if (type === 'download' && (existsSync(builtin) || existsSync(custom))) {
+	const dir = themeRoot();
+	const dest = path.join(dir, name);
+	if (type === 'download' && existsSync(dest)) {
 		return ret(-2000, '', '主题已存在，无需重复下载！');
 	}
-	const dir = themeDirFor(name);
-	const dest = path.join(dir, name);
 	try {
 		const base = await apiBase();
 		const url =

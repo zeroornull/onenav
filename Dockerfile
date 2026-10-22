@@ -1,5 +1,4 @@
-# 主题下载只在 /etc/os-release 含 alpine 时写入 data/templates（见 theme.ts）。
-# 用 Alpine 才能让用户主题落在数据卷上，容器重建不会丢掉。
+# 用户下载的主题只写入 data/templates（见 theme.ts），挂在 /app/data 卷上。
 # better-sqlite3 要求 Node >= 22；本机是 Node 24，构建和运行用同一主版本，避免原生模块 ABI 不一致。
 FROM node:24-alpine AS build
 
@@ -35,7 +34,6 @@ COPY --from=build --chown=onenav:onenav /app/package.json ./package.json
 COPY --from=build --chown=onenav:onenav /app/node_modules ./node_modules
 COPY --from=build --chown=onenav:onenav /app/build ./build
 COPY --chown=onenav:onenav db ./db
-COPY --chown=onenav:onenav templates ./templates
 COPY --chown=onenav:onenav version.txt ./version.txt
 
 # 空目录交给卷。不在构建时生成 data/onenav.db3，缺库时由 ensureDatabaseFile 从种子库复制。

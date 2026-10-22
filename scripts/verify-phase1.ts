@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { attemptLogin, apiToken, authorize, loginCookieValue, md5, passwordMatches } from '../src/lib/server/auth';
-import { installSite, parseConfigPhp } from '../src/lib/server/config';
+import { installSite, loadSiteConfig, parseConfigPhp } from '../src/lib/server/config';
 import {
 	DATABASE_DRIVER,
 	allCategoriesPrivate,
@@ -109,11 +109,68 @@ define('ENCRYPTED_PASSWORD','not-printed');
 define('EMAIL','a@example.com');
 `);
 assert(parsed.USER === 'abc' && parsed.EMAIL === 'a@example.com', 'config.php 解析失败');
-if (existsSync(live.configPhp)) {
-	const liveConfig = parseConfigPhp(readFileSync(live.configPhp, 'utf8'));
-	console.log(`本机 config.php 用户名: ${liveConfig.USER}`);
-} else {
-	console.log('本机没有 data/config.php');
+assert(parsed.ENCRYPTED_PASSWORD === 'not-printed', '密码摘要被改写');
+
+const migrateRoot = mkdtempSync(path.join(tmpdir(), 'onenav-migrate-'));
+try {
+	mkdirSync(path.join(migrateRoot, 'data'));
+	const migratePaths = dataPaths(migrateRoot);
+	assert(loadSiteConfig(migratePaths) === null, '没有账号文件时不应编造配置');
+	assert(!existsSync(migratePaths.configJson), '没有 php 时不应写出 config.json');
+
+	let incomplete = false;
+	try {
+		writeFileSync(migratePaths.configPhp, `<?php\ndefine('USER','abc');\ndefine('ENCRYPTED_PASSWORD','kept-hash');\n`);
+		loadSiteConfig(migratePaths);
+	} catch {
+		incomplete = true;
+	}
+	assert(incomplete, '缺字段的 config.php 不应迁移成功');
+	assert(existsSync(migratePaths.configPhp), '解析失败时不应删除 config.php');
+	assert(!existsSync(migratePaths.configJson), '解析失败时不应留下 config.json');
+
+	writeFileSync(
+		migratePaths.configPhp,
+		`<?php\nsystem('id');\ndefine('USER','abc');\ndefine('ENCRYPTED_PASSWORD','kept-hash');\ndefine('EMAIL','a@example.com');\n`
+	);
+	const migrated = loadSiteConfig(migratePaths);
+	assert(
+		migrated?.USER === 'abc' && migrated.ENCRYPTED_PASSWORD === 'kept-hash' && migrated.EMAIL === 'a@example.com',
+		'迁移后的账号不一致'
+	);
+	assert(!existsSync(migratePaths.configPhp), '核对通过后应删除 config.php');
+	const migratedJson = JSON.parse(readFileSync(migratePaths.configJson, 'utf8')) as {
+		username?: string;
+		encrypted_password?: string;
+		email?: string;
+	};
+	assert(
+		migratedJson.username === 'abc' &&
+			migratedJson.encrypted_password === 'kept-hash' &&
+			migratedJson.email === 'a@example.com',
+		'config.json 字段名或摘要不一致'
+	);
+
+	writeFileSync(
+		migratePaths.configPhp,
+		`<?php\ndefine('USER','other');\ndefine('ENCRYPTED_PASSWORD','kept-hash');\ndefine('EMAIL','a@example.com');\n`
+	);
+	const kept = loadSiteConfig(migratePaths);
+	assert(kept?.USER === 'abc', '已有 config.json 时不应被 config.php 覆盖');
+	assert(existsSync(migratePaths.configPhp), '核对不一致时不应删除 config.php');
+
+	writeFileSync(
+		migratePaths.configPhp,
+		`<?php\ndefine('USER','abc');\ndefine('ENCRYPTED_PASSWORD','kept-hash');\ndefine('EMAIL','a@example.com');\n`
+	);
+	loadSiteConfig(migratePaths);
+	assert(!existsSync(migratePaths.configPhp), '两边一致时残留的 config.php 应删除');
+	assert(
+		readFileSync(migratePaths.configJson, 'utf8').includes('"encrypted_password": "kept-hash"'),
+		'删除残留 php 时改写了 config.json'
+	);
+} finally {
+	rmSync(migrateRoot, { recursive: true, force: true });
 }
 
 const tempDb = path.join(tmpdir(), `onenav-phase1-${process.pid}.db3`);

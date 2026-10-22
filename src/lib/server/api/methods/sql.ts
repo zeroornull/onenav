@@ -8,6 +8,10 @@ export const methods = ['exe_sql'];
 const SQL_NAME = /^[\w.-]+\.sql$/;
 const ATTACH_RE = /\bATTACH\b(?:\s+DATABASE\b)?\s+('(?:[^']*)'|"(?:[^"]*)"|\S+)/gi;
 
+/**
+ * 按文件名读取 db/sql/*.sql 再执行。
+ * 这些是数据库迁移脚本，不是 PHP 源码，仓库里要保留。
+ */
 function sqlFile(name: string): string | null {
 	const safe = htmlspecialchars(name.trim());
 	if (!safe || !SQL_NAME.test(safe) || safe.includes('..')) return null;
