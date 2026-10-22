@@ -1,3 +1,7 @@
 class/cache
 data/config.php
 data/onenav.db3
+node_modules
+.svelte-kit
+build
+data/config.json
