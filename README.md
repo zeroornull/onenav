@@ -1,128 +1,66 @@
 # OneNav
 
-OneNav 重构版 ZMark 现已发布，点此了解：[https://www.zmark.app](https://www.zmark.app/)
+OneNav 是书签导航，用 SvelteKit 实现。容器里的启动命令是 `node build`。
 
-___
+## 本地开发
 
-OneNav 是一款功能强大且简洁高效的浏览器书签管理器，支持集中式管理书签，完美解决跨设备、跨平台、跨浏览器的同步与访问难题，实现一处部署、随处访问。它不仅安装简单、界面简洁、操作方便，还可与浏览器扩展（插件）配合使用，为你带来更加高效便捷的书签管理体验。
-
-![73a785f1df68a69f.png](https://img.rss.ink/imgs/2024/11/28/73a785f1df68a69f.png)
-
-**强大的链接拖拽排序**
-
-在default2主题中你可以自由的拖动链接快速排序。
-
-![](https://sv.png.pub/imgs/2024/11/28/1ec844b98e9b84f0.gif)
-
-> 注意：需要登录后，点击链接图标才能触发拖拽，点击其他区域无法拖拽！！！
-
-**书签搜索**
-
-通过顶部的搜索框，可以通过关键词模糊搜索匹配的链接，然后快速打开。
-
-![61bac5d46d30be1c.png](https://img.rss.ink/imgs/2024/11/28/61bac5d46d30be1c.png)
-
-**AI检索**
-
-将关键词或描述告知AI，AI会智能匹配您OneNav中存在的相关链接。
-
-![](https://img.rss.ink/imgs/2024/12/20/f03f278fe1e02be7.png)
-
-**链接检测**
-
-在【OneNav 后台 - 链接管理 - 我的链接】，点击批量检测按钮，对所有链接进行状态检测，助你快速找出死链。
-
-![](https://img.rss.ink/imgs/2024/12/17/935fb2e7799ffed9.png)
-
-**右键菜单**
-
-当您将鼠标移动到链接后，可以点击鼠标右键调出**右键菜单**，右键菜单支持：打开链接、打开备用链接、复制链接、显示二维码、编辑链接、删除链接等快捷操作。
-
-![532eb46f4da3c4ae.png](https://img.rss.ink/imgs/2024/11/28/532eb46f4da3c4ae.png)
-
-需要特别说明的是**打开备用链接**，OneNav在很早的版本中就支持了这个功能，该功能适用于以下情况：
-
-1. 您在NAS中部署了一个服务，现在想内网访问内网IP，外网访问外网域名
-2. 那么你可以将外网域名添加到主链接中，将内网IP添加到备用链接中
-3. 通过default2主题的右键菜单，根据您的情况访问主链接或备用链接
-
-> 注意：如果没有添加备用链接，则右键菜单不会出现【打开备用链接】按钮。
-
-**底部工具栏**
-
-底部工具栏默认对访客隐藏，只有当管理员登录后才会显示，支持5个操作按钮，分别是：添加链接、返回顶部、订阅管理、系统状态、后台管理。
-
-![12efff04c347d853.png](https://img.rss.ink/imgs/2024/11/28/12efff04c347d853.png)
-
-**前台编辑**
-
-default2 主题使书签分类和链接管理更加高效，所有的添加、编辑、修改和删除操作都可以在前台通过弹窗完成，无需进入后台，从而大大提升了管理效率。
-
-![81976354a0b749e7.png](https://img.rss.ink/imgs/2024/11/28/81976354a0b749e7.png)
-
-> **特别声明：未经作者允许，请勿将OneNav进行获利行为或进行商业行为，亦不得用于非法用途，否则自行承担相应法律责任！！！**
-
-## 功能特色
-
-* 支持AI检索匹配链接
-* 支持链接批量检测
-* 支持后台管理
-* 支持私有链接
-* 支持Chrome/Firefox/Edge书签批量导入
-* 支持多种主题风格
-* 支持链接信息自动识别
-* 支持API
-* 支持Docker部署
-* 支持二级分类
-* 支持[浏览器扩展](https://dwz.ovh/4kxn2)（插件）
-* 支持后台一键在线升级
-* 支持链接拖拽排序
-* 支持PWA应用
-* 手机版后台
-
-## 安装
-
-**常规安装：**
-
-1. 需安装PHP环境，并确保支持SQLite3
-2. 下载源码解压到站点根目录
-3. 访问首页根据提示初始化用户名/密码
-4. 访问后台：`http://IP/index.php?c=login`
-
-**Docker部署：**
+使用 Node 24，与 `Dockerfile` 的 `node:24-alpine` 一致。`package.json` 没有 `engines`。镜像注释写明 better-sqlite3 需要 Node 22 及以上；构建和运行都用 Node 24，避免原生模块 ABI 不一致。
 
 ```bash
-docker run -itd --name="onenav" -p 3080:80 \
-    -v /data/onenav:/data/wwwroot/default/data \
-    --restart always \
-    helloz/onenav
+npm install
+npm run dev
 ```
-* 第一个`3080`是自定义访问端口，可以自行修改，第二个`80`是容器端口，请勿修改
-* `/data/onenav`：本机挂载目录，用于持久存储Onenav数据
-* `/data/wwwroot/default/data`：容器内部路径，请勿修改，否则会造成数据丢失！
 
-> 更多说明，请参考帮助文档：https://dwz.ovh/onenav
+开发服务器地址以终端输出为准。还没有 `data/config.json` 时，打开站点会转到 `/install`。登录页是 `/login`，后台是 `/admin`。
 
-## Demo
+## 配置
 
-* **官方演示站点：**[http://demo.onenav.top/](http://demo.onenav.top/index.php?c=login)
-* 账号/密码：`xiaoz`/`xiaoz.me`
+没有用户表。账号在 `data/config.json`，运行时只读这个文件：
 
+```json
+{
+  "username": "name",
+  "encrypted_password": "摘要",
+  "email": "you@example.com"
+}
+```
 
-## OneNav交流群
+`encrypted_password` 是 `md5(用户名 + 密码)` 的十六进制摘要，用户名和密码直接拼接。`/install` 要求用户名 3–32 位小写字母或数字，密码 6–16 位，字符为数字、字母和 `!@#%^*.()`。
 
-* [https://dwz.ovh/qxsul](https://dwz.ovh/qxsul)
+只剩 `data/config.php`、还没有 JSON 时，读取配置会用正则取出 `USER`、`ENCRYPTED_PASSWORD`、`EMAIL`，写成 `data/config.json`。三个字段核对一致后删除 PHP 文件。核对失败时保留 `data/config.php`。已经存在的 `data/config.json` 保持原样。程序只解析这三个常量，不执行 PHP。
 
-## Stargazers over time
-[![Stargazers over time](https://starchart.cc/helloxz/onenav.svg?variant=adaptive)](https://starchart.cc/helloxz/onenav)
+`data/config.json` 和 `data/config.php` 留在本机，不要提交。
 
-## 鸣谢
+## 数据
 
-感谢`@itushan`的代码贡献及主题开发，以及其它OneNav贡献者和使用者，名字太多无法一一列举，还请谅解。
+书签库是 `data/onenav.db3`。这个文件不存在时，才从 `db/onenav.simple.db3` 复制；已有库不会覆盖。镜像构建时不生成 `data/onenav.db3`。`data/onenav.db3` 是运行时数据，不要提交。
 
-OneNav诞生离不开以下项目，在此表示感谢（排名不分先后）。
+## Docker
 
-* [WebStackPage](https://github.com/WebStackPage/WebStackPage.github.io)
-* [LayUI](https://github.com/sentsin/layui)
-* [Medoo](https://github.com/catfan/Medoo)
-* [MDUI](https://github.com/zdhxiong/mdui)
+本地构建并运行：
+
+```bash
+docker build -t onenav .
+docker run -d --name onenav \
+  -p 3000:3000 \
+  -v /你的数据目录:/app/data \
+  onenav
+```
+
+使用已发布镜像：
+
+```bash
+docker pull ghcr.io/zeroornull/onenav:latest
+docker run -d --name onenav \
+  -p 3000:3000 \
+  -v /你的数据目录:/app/data \
+  ghcr.io/zeroornull/onenav:latest
+```
+
+容器监听 `0.0.0.0:3000`（可用环境变量 `HOST`、`PORT` 覆盖）。`-p` 左边是本机端口，可以改；右边保持 3000。数据卷是 `/app/data`，配置和数据库都在这里。进程以用户 `onenav`（uid 1001）运行，挂载目录需要它能写。
+
+推送到 `refactor/svelte` 或 `main` 时，`.github/workflows/image.yml` 构建 `linux/amd64` 和 `linux/arm64`，并推送 `ghcr.io/zeroornull/onenav:latest` 和当次 commit 的标签。这个 workflow 也可以手动触发。
+
+## 其它
+
+后台仍保留订阅、升级、主题、SQL 和 AI 检索。下载的主题写到数据卷里的 `data/templates`；现在的首页是 Svelte 页面。`db/sql/*.sql` 由 `exe_sql` 按文件名执行。AI 检索接口是 `ai_search`。
