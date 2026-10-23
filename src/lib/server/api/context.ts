@@ -13,5 +13,7 @@ export type ApiResult = Record<string, unknown> & { code: number };
 export type FileDownload = {
 	filename: string;
 	contentType: string;
-	body: string | Uint8Array;
+	body?: string | Uint8Array;
+	path?: string;
+	ephemeral?: boolean;
 };

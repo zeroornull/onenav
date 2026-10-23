@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ApiContext, ApiResult } from '#lib/server/api/context';
+import { BUSY_MSG, claimExclusive } from '#lib/server/api/exclusive';
 import {
 	allRows,
 	dataRoot,
@@ -82,6 +83,17 @@ function impLink(ctx: ApiContext): ApiResult {
 	if (suffix !== 'html' && suffix !== 'htm') return err(-2000, '文件不合法!');
 	const denied = deny(ctx);
 	if (denied) return denied;
+	const release = claimExclusive();
+	if (!release) return err(-2000, BUSY_MSG);
+	try {
+		return importFlat(ctx);
+	} finally {
+		release();
+	}
+}
+
+function importFlat(ctx: ApiContext): ApiResult {
+	const filename = text(ctx.params.filename).trim();
 	const target = resolveDataFile(filename);
 	if (!target || !existsSync(target)) return err(-1016, 'File does not exist!');
 	const content = readFileSync(target, 'utf8');
@@ -118,6 +130,16 @@ function impLink(ctx: ApiContext): ApiResult {
 function importLink(ctx: ApiContext): ApiResult {
 	const denied = deny(ctx);
 	if (denied) return denied;
+	const release = claimExclusive();
+	if (!release) return err(-2000, BUSY_MSG);
+	try {
+		return importNested(ctx);
+	} finally {
+		release();
+	}
+}
+
+function importNested(ctx: ApiContext): ApiResult {
 	const filename = text(ctx.params.filename).trim();
 	const target = resolveDataFile(filename);
 	if (!target || !existsSync(target)) return err(-1016, 'File does not exist!');

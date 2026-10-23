@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import type { ApiContext, ApiResult } from '#lib/server/api/context';
-import { extractArchive } from '#lib/server/api/archive';
+import { ARCHIVE_LIMIT, extractArchive } from '#lib/server/api/archive';
+import { BUSY_MSG, claimExclusive } from '#lib/server/api/exclusive';
 import { apiBase, BROWSER_UA } from '#lib/server/api/remote';
 import { getOption, setOption } from '#lib/server/options';
 import { dataRoot, deny, ret, text } from '#lib/server/api/util';
@@ -59,6 +61,8 @@ async function downTheme(ctx: ApiContext): Promise<ApiResult> {
 	if (type === 'download' && existsSync(dest)) {
 		return ret(-2000, '', '主题已存在，无需重复下载！');
 	}
+	const release = claimExclusive();
+	if (!release) return ret(-2000, '', BUSY_MSG);
 	try {
 		const base = await apiBase();
 		const url =
@@ -69,17 +73,29 @@ async function downTheme(ctx: ApiContext): Promise<ApiResult> {
 			signal: AbortSignal.timeout(120_000),
 			headers: { 'user-agent': BROWSER_UA }
 		});
-		if (response.status === 404) return ret(-2000, '', '远程服务器上不存在此主题！');
-		if (!response.ok) return ret(-2000, '', '主题下载失败，请检查目录权限！');
-		const buf = Buffer.from(await response.arrayBuffer());
+		if (response.status === 404) {
+			await response.body?.cancel();
+			return ret(-2000, '', '远程服务器上不存在此主题！');
+		}
+		if (!response.ok || !response.body) return ret(-2000, '', '主题下载失败，请检查目录权限！');
+		const length = Number(response.headers.get('content-length') ?? '');
+		if (Number.isFinite(length) && length > ARCHIVE_LIMIT) {
+			await response.body.cancel();
+			return ret(-2000, '', '主题下载失败，请检查目录权限！');
+		}
 		mkdirSync(dir, { recursive: true });
-		const placed = extractArchive(buf, dest);
+		const placed = await extractArchive(
+			Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream),
+			dest
+		);
 		if (!placed.ok) {
 			return ret(-2000, '', placed.entry ? '主题压缩包包含非法路径！' : '主题下载失败，请检查目录权限！');
 		}
 		return ret(200, '', '主题下载成功！');
 	} catch {
 		return ret(-2000, '', '主题下载失败，请检查目录权限！');
+	} finally {
+		release();
 	}
 }
 

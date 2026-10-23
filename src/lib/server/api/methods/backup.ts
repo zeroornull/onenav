@@ -1,6 +1,10 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ApiContext, ApiResult } from '#lib/server/api/context';
+import { BUSY_MSG, claimExclusive } from '#lib/server/api/exclusive';
+import { openDatabase } from '#lib/server/db';
 import {
 	backupNameOk,
 	dataRoot,
@@ -42,21 +46,33 @@ function backupFile(name: string): string | null {
 	return resolveInside(backupDir(), path.join(backupDir(), name));
 }
 
-function backupDb(ctx: ApiContext): ApiResult {
+async function backupDb(ctx: ApiContext): Promise<ApiResult> {
 	const denied = deny(ctx);
 	if (denied) return denied;
-	const source = databaseFile(ctx);
-	if (!source || !existsSync(source)) return ret(-2000, '', '备份目录创建失败，请检查目录权限！');
-	const filename = `onenav_${formatLocal(new Date(), 'YmdHi')}_${versionLabel()}.db3`;
-	const destination = backupFile(filename);
-	if (!destination) return ret(-2000, '', '备份目录创建失败，请检查目录权限！');
+	const release = claimExclusive();
+	if (!release) return ret(-2000, '', BUSY_MSG);
+	let destination: string | null = null;
 	try {
+		const source = databaseFile(ctx);
+		if (!source || !existsSync(source)) return ret(-2000, '', '备份目录创建失败，请检查目录权限！');
+		const filename = `onenav_${formatLocal(new Date(), 'YmdHi')}_${versionLabel()}.db3`;
+		destination = backupFile(filename);
+		if (!destination) return ret(-2000, '', '备份目录创建失败，请检查目录权限！');
 		mkdirSync(backupDir(), { recursive: true });
-		copyFileSync(source, destination);
+		await ctx.db.backup(destination);
+		return ret(200, filename, 'success');
 	} catch {
+		if (destination) {
+			try {
+				unlinkSync(destination);
+			} catch {
+				// 半成品备份删不掉时留在磁盘上。
+			}
+		}
 		return ret(-2000, '', '备份目录创建失败，请检查目录权限！');
+	} finally {
+		release();
 	}
-	return ret(200, filename, 'success');
 }
 
 function listBackups(ctx: ApiContext): ApiResult {
@@ -106,45 +122,62 @@ function delBackup(ctx: ApiContext): ApiResult {
 	return ret(200, '', '备份数据库已被删除！');
 }
 
-function restoreDb(ctx: ApiContext): ApiResult {
+async function restoreDb(ctx: ApiContext): Promise<ApiResult> {
 	const denied = deny(ctx);
 	if (denied) return denied;
-	const name = ctx.params.name ?? '';
-	const file = backupFile(name);
-	const target = databaseFile(ctx);
-	if (!file || !target) return ret(-2000, '', '数据库名称不合法！');
-	if (!existsSync(file)) return ret(-2000, '', '回滚失败，请检查目录权限！');
+	const release = claimExclusive();
+	if (!release) return ret(-2000, '', BUSY_MSG);
+	let source: ReturnType<typeof openDatabase> | null = null;
 	try {
-		copyFileSync(file, target);
+		const name = ctx.params.name ?? '';
+		const file = backupFile(name);
+		const target = databaseFile(ctx);
+		if (!file || !target) return ret(-2000, '', '数据库名称不合法！');
+		if (!existsSync(file)) return ret(-2000, '', '回滚失败，请检查目录权限！');
+		source = openDatabase(file, { readonly: true, fileMustExist: true });
+		await source.backup(target);
+		return ret(200, '', `数据库已回滚为${name}`);
 	} catch {
 		return ret(-2000, '', '回滚失败，请检查目录权限！');
+	} finally {
+		source?.close();
+		release();
 	}
-	return ret(200, '', `数据库已回滚为${name}`);
 }
 
-function downDb(ctx: ApiContext): ApiResult {
+async function downDb(ctx: ApiContext): Promise<ApiResult> {
 	const denied = deny(ctx);
 	if (denied) return denied;
 	const name = ctx.params.name ?? '';
 	const file = backupFile(name);
 	if (!file) return ret(-2000, '', '数据库名称不合法！');
 	if (!existsSync(file)) return { code: 404, data: '', msg: '文件不存在' };
-	let bytes: Buffer;
+	const temp = path.join(tmpdir(), `onenav-down-${randomBytes(8).toString('hex')}.db3`);
+	let source: ReturnType<typeof openDatabase> | null = null;
 	try {
-		bytes = readFileSync(file);
+		source = openDatabase(file, { readonly: true, fileMustExist: true });
+		await source.backup(temp);
+		return {
+			code: 0,
+			data: { name, size: statSync(temp).size },
+			msg: '',
+			download: {
+				filename: name,
+				contentType: 'application/octet-stream',
+				path: temp,
+				ephemeral: true
+			}
+		};
 	} catch {
-		return { code: 404, data: '', msg: '文件不存在' };
-	}
-	return {
-		code: 0,
-		data: { name, size: bytes.length },
-		msg: '',
-		download: {
-			filename: name,
-			contentType: 'application/octet-stream',
-			body: bytes
+		try {
+			unlinkSync(temp);
+		} catch {
+			// 临时库还没生成。
 		}
-	};
+		return { code: 404, data: '', msg: '文件不存在' };
+	} finally {
+		source?.close();
+	}
 }
 
 async function uploadBackup(ctx: ApiContext): Promise<ApiResult> {

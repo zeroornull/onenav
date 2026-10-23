@@ -5,6 +5,10 @@ import { getOption } from '#lib/server/options';
 
 export const methods = ['ai_search'];
 
+/** 单条描述进提示词前先截断，整表描述还有总长度上限。 */
+export const AI_DESC_CHARS = 120;
+export const AI_DESC_BUDGET = 6_000;
+
 const SEARCH_PROMPT = `用户会给你一段JSON格式的书签数据，其中包含每个链接的标题、URL和描述（描述可能为空）等信息。你需要根据用户提供的关键词，智能匹配与之相关的链接，并推荐3个额外的相关链接。请严格遵循以下规则：
 
 ### 规则：
@@ -50,11 +54,25 @@ function readSetting(ctx: ApiContext): AiSetting | null {
 
 function messages(ctx: ApiContext, feature: string, content: string): { role: string; content: string }[] {
 	if (feature === 'search') {
-		const bookmarks = allRows(ctx, 'SELECT url, title, description FROM on_links').map((link) => ({
-			title: link.title == null ? '' : String(link.title),
-			url: link.url == null ? '' : String(link.url),
-			description: link.description == null ? null : String(link.description)
-		}));
+		const rows = allRows(
+			ctx,
+			'SELECT url, title, substr(description, 1, ?) AS description FROM on_links',
+			AI_DESC_CHARS
+		);
+		let budget = AI_DESC_BUDGET;
+		const bookmarks = rows.map((link) => {
+			const title = link.title == null ? '' : String(link.title);
+			const url = link.url == null ? '' : String(link.url);
+			let description: string | null = null;
+			if (link.description != null && String(link.description) !== '' && budget > 0) {
+				const raw = String(link.description);
+				description = raw.length <= budget ? raw : raw.slice(0, budget);
+				budget -= description.length;
+			} else if (link.description != null) {
+				description = '';
+			}
+			return { title, url, description };
+		});
 		return [
 			{ role: 'system', content: SEARCH_PROMPT },
 			{ role: 'user', content: `JSON书签列表为：${JSON.stringify(bookmarks)}` },

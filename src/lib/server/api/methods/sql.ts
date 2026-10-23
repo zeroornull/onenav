@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ApiContext, ApiResult } from '#lib/server/api/context';
+import { BUSY_MSG, claimExclusive } from '#lib/server/api/exclusive';
 import { dataRoot, deny, err, htmlspecialchars, phpEmpty, resolveInside, text } from '#lib/server/api/util';
 
 export const methods = ['exe_sql'];
@@ -101,7 +102,13 @@ export function handle(ctx: ApiContext, method: string): ApiResult {
 	if (method !== 'exe_sql') return { code: -1, msg: '未实现' };
 	const denied = deny(ctx);
 	if (denied) return denied;
-	const sql = text(ctx.params.sql);
-	if (sql.trim() !== '') return runSqlText(ctx, sql);
-	return runSqlFile(ctx, text(ctx.params.name));
+	const release = claimExclusive();
+	if (!release) return err(-2000, BUSY_MSG);
+	try {
+		const sql = text(ctx.params.sql);
+		if (sql.trim() !== '') return runSqlText(ctx, sql);
+		return runSqlFile(ctx, text(ctx.params.name));
+	} finally {
+		release();
+	}
 }

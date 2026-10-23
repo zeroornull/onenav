@@ -1,7 +1,12 @@
-import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { createReadStream, createWriteStream, existsSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { ApiContext, ApiResult } from '#lib/server/api/context';
-import { extractArchive } from '#lib/server/api/archive';
+import { ARCHIVE_LIMIT, extractArchive } from '#lib/server/api/archive';
+import { BUSY_MSG, claimExclusive } from '#lib/server/api/exclusive';
 import { apiBase, BROWSER_UA, fetchText } from '#lib/server/api/remote';
 import { deny, ret, text } from '#lib/server/api/util';
 
@@ -56,10 +61,23 @@ async function nextVersion(ctx: ApiContext): Promise<ApiResult> {
 	}
 }
 
+async function moveArchive(partial: string, archive: string) {
+	try {
+		renameSync(partial, archive);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+		await pipeline(createReadStream(partial), createWriteStream(archive));
+		unlinkSync(partial);
+	}
+}
+
 /** PHP finally：update.php 存在且不小于 100 字节才算更新程序就绪。 */
 async function downloadUpdater(): Promise<true | ApiResult> {
+	const release = claimExclusive();
+	if (!release) return ret(-2000, '', BUSY_MSG);
 	const root = process.cwd();
 	const archive = path.join(root, 'update.tar.gz');
+	const partial = path.join(tmpdir(), `onenav-update-${randomBytes(8).toString('hex')}.tar.gz`);
 	const updatePhp = path.join(root, 'update.php');
 	try {
 		const base = await apiBase();
@@ -68,17 +86,29 @@ async function downloadUpdater(): Promise<true | ApiResult> {
 			signal: AbortSignal.timeout(60_000),
 			headers: { 'user-agent': BROWSER_UA }
 		});
-		if (!response.ok) throw new Error(`HTTP ${response.status}`);
-		const buf = Buffer.from(await response.arrayBuffer());
-		const placed = extractArchive(buf, root);
+		if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+		const length = Number(response.headers.get('content-length') ?? '');
+		if (Number.isFinite(length) && length > ARCHIVE_LIMIT) throw new Error('too big');
+		const placed = await extractArchive(
+			Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream),
+			root,
+			{ copyTo: partial }
+		);
 		if (!placed.ok) throw new Error('illegal archive');
-		writeFileSync(archive, buf);
+		await moveArchive(partial, archive);
 	} catch {
 		try {
-			unlinkSync(archive);
+			unlinkSync(partial);
 		} catch {
 			// 下载失败时清掉半截压缩包。
 		}
+		try {
+			unlinkSync(archive);
+		} catch {
+			// 旧压缩包可能本来就不存在。
+		}
+	} finally {
+		release();
 	}
 	if (existsSync(updatePhp)) {
 		if (statSync(updatePhp).size < 100) return ret(-2000, '', '更新程序异常，请检查目录权限！');
